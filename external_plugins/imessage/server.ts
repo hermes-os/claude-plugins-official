@@ -208,6 +208,7 @@ type Access = {
   textChunkLimit?: number
   chunkMode?: 'length' | 'newline'
   appendSignature?: boolean
+  permissionChat?: string
 }
 
 // Default is allowlist, not pairing. Unlike Discord/Telegram where a bot has
@@ -252,6 +253,7 @@ function readAccessFile(): Access {
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
       appendSignature: parsed.appendSignature,
+      permissionChat: parsed.permissionChat,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -592,6 +594,14 @@ const mcp = new Server(
 // Permission prompts go to self-chat only. A "yes" grants tool execution on
 // this machine — that authority is the owner's alone, not allowlisted
 // contacts'.
+//
+// By default we discover self-chats by scanning chat.db for handles you've
+// sent messages from (SELF). That heuristic breaks for split-handle setups
+// (e.g. phone sends as +1NNN, Mac sends as you@gmail.com) — only the Mac's
+// handle ends up in SELF, so prompts land in a Mac-side self-chat the user
+// doesn't watch and miss the phone-side thread entirely. Setting
+// access.permissionChat to a single chat GUID overrides the heuristic and
+// pins prompts to exactly that thread.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -612,14 +622,19 @@ mcp.setNotificationHandler(
       `${tool_name}: ${description}\n` +
       preview +
       `Reply "yes ${request_id}" to allow or "no ${request_id}" to deny.`
+    const access = loadAccess()
     const targets = new Set<string>()
-    for (const h of SELF) {
-      for (const { guid } of qChatsForHandle.all(h)) targets.add(guid)
+    if (access.permissionChat) {
+      targets.add(access.permissionChat)
+    } else {
+      for (const h of SELF) {
+        for (const { guid } of qChatsForHandle.all(h)) targets.add(guid)
+      }
     }
     if (targets.size === 0) {
       process.stderr.write(
         `imessage channel: permission_request ${request_id} not relayed — no self-chat found. ` +
-        `Send yourself an iMessage to create one.\n`,
+        `Send yourself an iMessage to create one, or set access.permissionChat.\n`,
       )
       return
     }

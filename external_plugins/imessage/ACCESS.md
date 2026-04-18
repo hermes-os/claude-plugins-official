@@ -90,6 +90,8 @@ AppleScript can send messages but cannot tapback, edit, or thread-reply; those r
 
 **`appendSignature`** controls the `\nSent by Claude` suffix on outbound text. Defaults to `true`. Set `false` to disable. Overrides the `IMESSAGE_APPEND_SIGNATURE` env var when present.
 
+**`permissionChat`** pins permission prompts to a specific chat GUID (e.g. `iMessage;-;+15551234567`). Without it, prompts go to every self-chat the plugin can find by scanning your `is_from_me=1` accounts in chat.db — which fails for split-handle setups (phone sends as your number, Mac sends as your email) where one self-chat is silent and the other dupes. Setting this overrides the heuristic and pins prompts to one thread.
+
 There is no `ackReaction` or `replyToMode` on this channel.
 
 ## Skill reference
@@ -104,7 +106,7 @@ There is no `ackReaction` or `replyToMode` on this channel.
 | `/imessage:access policy pairing` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/imessage:access group add "iMessage;+;chat…"` | Enable a group. Quote the GUID. Flags: `--no-mention`, `--allow a,b`. |
 | `/imessage:access group rm "iMessage;+;chat…"` | Disable a group. |
-| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `appendSignature`. |
+| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `appendSignature`, `permissionChat`. |
 
 ## Config file
 
@@ -142,6 +144,11 @@ There is no `ackReaction` or `replyToMode` on this channel.
   "chunkMode": "newline",
 
   // Append "\nSent by Claude" to outbound text. Default true.
-  "appendSignature": true
+  "appendSignature": true,
+
+  // Pin permission prompts to one chat GUID. Useful for split-handle setups
+  // where the chat.db SELF heuristic targets the wrong self-chat. Omit to
+  // use auto-detection.
+  "permissionChat": "iMessage;-;+15551234567"
 }
 ```
