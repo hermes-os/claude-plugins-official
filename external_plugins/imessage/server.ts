@@ -56,8 +56,15 @@ process.on('uncaughtException', err => {
 // Permission-reply spec from anthropics/claude-cli-internal
 // src/services/mcp/channelPermissions.ts — inlined (no CC repo dep).
 // 5 lowercase letters a-z minus 'l'. Case-insensitive for phone autocorrect.
-// Strict: no bare yes/no (conversational), no prefix/suffix chatter.
-const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)\s+([a-km-z]{5})\s*$/i
+// Token is OPTIONAL — bare "yes"/"no" resolves the oldest pending request via
+// the FIFO queue below, matching how prompts arrive on the user's phone.
+const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)(?:\s+([a-km-z]{5}))?\s*$/i
+
+// FIFO queue of unresolved request_ids (oldest first). Pushed when a
+// permission_request notification arrives, drained on inbound yes/no reply.
+// Bare "yes"/"no" resolves the head; explicit "yes <id>" resolves and
+// removes that specific id wherever it sits.
+const pendingPermissions: string[] = []
 
 let db: Database
 try {
@@ -617,11 +624,13 @@ mcp.setNotificationHandler(
     // input_preview is unbearably long for Write/Edit; show only for Bash
     // where the command itself is the dangerous part.
     const preview = tool_name === 'Bash' ? `${input_preview}\n\n` : '\n'
+    // request_id stays in the header for audit/log clarity but the reply
+    // instructions are bare so the user can answer with "yes" / "no".
     const text =
       `🔐 Permission request [${request_id}]\n` +
       `${tool_name}: ${description}\n` +
       preview +
-      `Reply "yes ${request_id}" to allow or "no ${request_id}" to deny.`
+      `Reply "yes" to allow or "no" to deny.`
     const access = loadAccess()
     const targets = new Set<string>()
     if (access.permissionChat) {
@@ -638,6 +647,7 @@ mcp.setNotificationHandler(
       )
       return
     }
+    pendingPermissions.push(request_id)
     for (const guid of targets) {
       const err = sendText(guid, text)
       if (err) {
@@ -841,6 +851,13 @@ function handleInbound(r: Row): void {
   const isSelfChat = !isGroup && SELF.has(sender.toLowerCase())
   if (isSelfChat && consumeEcho(r.chat_guid, text || '\x00att')) return
 
+  // permissionChat: an explicitly-pinned thread (split-handle setups where
+  // the prompt-receiving chat isn't a Mac-side self-chat). Owner-only since
+  // the gate below still enforces allowFrom for non-self-chat senders.
+  const accessSnapshot = loadAccess()
+  const isPermissionChat =
+    !!accessSnapshot.permissionChat && r.chat_guid === accessSnapshot.permissionChat
+
   // Self-chat bypasses access control — you're the owner.
   if (!isSelfChat) {
     const result = gate({
@@ -864,13 +881,30 @@ function handleInbound(r: Row): void {
   }
 
   // Permission replies: emit the structured event instead of relaying as
-  // chat. Owner-only — same gate as the send side.
-  const permMatch = isSelfChat ? PERMISSION_REPLY_RE.exec(text) : null
+  // chat. Owner-only — same gate as the send side. Accepted from self-chat
+  // OR the explicitly-configured permissionChat. Bare "yes"/"no" pops the
+  // oldest pending request_id from the FIFO queue; "yes <id>" targets a
+  // specific request and removes it from the queue wherever it sits.
+  const permMatch = (isSelfChat || isPermissionChat) ? PERMISSION_REPLY_RE.exec(text) : null
   if (permMatch) {
+    const explicitId = permMatch[2]?.toLowerCase()
+    let requestId: string | undefined
+    if (explicitId) {
+      const idx = pendingPermissions.indexOf(explicitId)
+      if (idx >= 0) pendingPermissions.splice(idx, 1)
+      requestId = explicitId
+    } else {
+      requestId = pendingPermissions.shift()
+    }
+    if (!requestId) {
+      // Bare yes/no with nothing pending — likely conversational, ignore.
+      process.stderr.write(`imessage channel: permission reply with no pending request — ignored\n`)
+      return
+    }
     void mcp.notification({
       method: 'notifications/claude/channel/permission',
       params: {
-        request_id: permMatch[2]!.toLowerCase(),
+        request_id: requestId,
         behavior: permMatch[1]!.toLowerCase().startsWith('y') ? 'allow' : 'deny',
       },
     })
