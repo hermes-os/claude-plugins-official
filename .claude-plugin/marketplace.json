@@ -2838,7 +2838,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/Digital-Process-Tools/claude-remember.git",
-        "sha": "fc97f082a39431fc88bf038c917dd530de32b73a"
+        "sha": "32a3dae6786bd1bec0fcea3c3de4c0c80f6621e7"
       },
       "homepage": "https://github.com/Digital-Process-Tools/claude-remember"
     },
@@ -2991,7 +2991,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/sanity-io/agent-toolkit.git",
-        "sha": "fc0e709f61be8abd03e805756d0c4c2983b0a1b5"
+        "sha": "dfcdd2844a0e72627d22f93d90ebdc53ef510a66"
       },
       "homepage": "https://www.sanity.io"
     },
@@ -3124,7 +3124,7 @@
         "url": "https://github.com/getsentry/cli.git",
         "path": "plugins/sentry-cli",
         "ref": "main",
-        "sha": "3e292ee4beb5c8254e0f020d2bfaf64fa16a7132"
+        "sha": "9ce265d2ec2950167381ce559aab832dc4fec3ee"
       },
       "homepage": "https://sentry.io"
     },
@@ -3213,7 +3213,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/slackapi/slack-mcp-plugin.git",
-        "sha": "f43f620b0f7a95271ec044e3cfebeef81d2a6ee7"
+        "sha": "937e74b74f0b546ae7a656c3c6b2ed53540d4ab8"
       },
       "homepage": "https://github.com/slackapi/slack-mcp-plugin/tree/main"
     },
@@ -3684,7 +3684,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/wix/skills.git",
-        "sha": "efedbb108aa5ea091f60ab090ead68609e22d816"
+        "sha": "df0c1f4f58f230b5a8ee2e3b698c9728bb46ffb9"
       },
       "homepage": "https://dev.wix.com/docs/wix-cli/guides/development/about-wix-skills"
     },
