@@ -120,7 +120,8 @@ Delivery config. Supported keys:
 - `chunkMode`: `length` | `newline` — hard cut vs paragraph-preferring
 - `mentionPatterns`: JSON array of regex strings — iMessage has no structured mentions, so this is the only trigger in groups
 - `appendSignature`: boolean — append `\nSent by Claude` to outbound text (default true)
-- `permissionChat`: string — chat GUID (e.g. `iMessage;-;+15551234567`) to pin permission prompts to. Without it, prompts go to every self-chat the plugin discovers from `is_from_me=1` accounts. Useful when split-handle setups silence one self-chat or dupe in another.
+- `permissionChat`: string — one-to-one chat GUID (e.g. `iMessage;-;+15551234567`) to pin permission prompts to; configure together with `permissionOwner`
+- `permissionOwner`: string — exact owner handle in `permissionChat`; the server requires both keys and verifies the DM participant before routing prompts or accepting token-correlated replies
 
 Read, set the key, write, confirm.
 

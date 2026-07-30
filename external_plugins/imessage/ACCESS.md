@@ -90,7 +90,12 @@ AppleScript can send messages but cannot tapback, edit, or thread-reply; those r
 
 **`appendSignature`** controls the `\nSent by Claude` suffix on outbound text. Defaults to `true`. Set `false` to disable. Overrides the `IMESSAGE_APPEND_SIGNATURE` env var when present.
 
-**`permissionChat`** pins permission prompts to a specific chat GUID (e.g. `iMessage;-;+15551234567`). Without it, prompts go to every self-chat the plugin can find by scanning your `is_from_me=1` accounts in chat.db — which fails for split-handle setups (phone sends as your number, Mac sends as your email) where one self-chat is silent and the other dupes. Setting this overrides the heuristic and pins prompts to one thread.
+**`permissionChat`** and **`permissionOwner`** pin permission prompts to a
+specific one-to-one chat and authenticate replies to the exact owner handle
+(for example, `iMessage;-;+15551234567` and `+15551234567`). Configure both.
+The server verifies that the chat is a DM containing that handle; otherwise it
+falls back to discovered self-chats. Permission replies always include the
+five-letter request token so delayed messages cannot approve another request.
 
 There is no `ackReaction` or `replyToMode` on this channel.
 
@@ -106,7 +111,7 @@ There is no `ackReaction` or `replyToMode` on this channel.
 | `/imessage:access policy pairing` | Set `dmPolicy`. Values: `pairing`, `allowlist`, `disabled`. |
 | `/imessage:access group add "iMessage;+;chat…"` | Enable a group. Quote the GUID. Flags: `--no-mention`, `--allow a,b`. |
 | `/imessage:access group rm "iMessage;+;chat…"` | Disable a group. |
-| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `appendSignature`, `permissionChat`. |
+| `/imessage:access set textChunkLimit 5000` | Set a config key: `textChunkLimit`, `chunkMode`, `mentionPatterns`, `appendSignature`, `permissionChat`, `permissionOwner`. |
 
 ## Config file
 
@@ -146,9 +151,9 @@ There is no `ackReaction` or `replyToMode` on this channel.
   // Append "\nSent by Claude" to outbound text. Default true.
   "appendSignature": true,
 
-  // Pin permission prompts to one chat GUID. Useful for split-handle setups
-  // where the chat.db SELF heuristic targets the wrong self-chat. Omit to
-  // use auto-detection.
-  "permissionChat": "iMessage;-;+15551234567"
+  // Pin permission prompts to one verified owner DM. Both keys are required.
+  // Omit both to use self-chat auto-detection.
+  "permissionChat": "iMessage;-;+15551234567",
+  "permissionOwner": "+15551234567"
 }
 ```

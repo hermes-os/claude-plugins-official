@@ -29,6 +29,11 @@ import { randomBytes } from 'crypto'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, statSync, renameSync, realpathSync } from 'fs'
 import { homedir } from 'os'
 import { join, basename, sep } from 'path'
+import {
+  isPinnedPermissionTarget,
+  isTrustedPermissionReply,
+  parsePermissionReply,
+} from './permission-routing'
 
 const STATIC = process.env.IMESSAGE_ACCESS_MODE === 'static'
 const APPEND_SIGNATURE_DEFAULT = process.env.IMESSAGE_APPEND_SIGNATURE !== 'false'
@@ -52,19 +57,6 @@ process.on('unhandledRejection', err => {
 process.on('uncaughtException', err => {
   process.stderr.write(`imessage channel: uncaught exception: ${err}\n`)
 })
-
-// Permission-reply spec from anthropics/claude-cli-internal
-// src/services/mcp/channelPermissions.ts — inlined (no CC repo dep).
-// 5 lowercase letters a-z minus 'l'. Case-insensitive for phone autocorrect.
-// Token is OPTIONAL — bare "yes"/"no" resolves the oldest pending request via
-// the FIFO queue below, matching how prompts arrive on the user's phone.
-const PERMISSION_REPLY_RE = /^\s*(y|yes|n|no)(?:\s+([a-km-z]{5}))?\s*$/i
-
-// FIFO queue of unresolved request_ids (oldest first). Pushed when a
-// permission_request notification arrives, drained on inbound yes/no reply.
-// Bare "yes"/"no" resolves the head; explicit "yes <id>" resolves and
-// removes that specific id wherever it sits.
-const pendingPermissions: string[] = []
 
 let db: Database
 try {
@@ -216,6 +208,7 @@ type Access = {
   chunkMode?: 'length' | 'newline'
   appendSignature?: boolean
   permissionChat?: string
+  permissionOwner?: string
 }
 
 // Default is allowlist, not pairing. Unlike Discord/Telegram where a bot has
@@ -261,6 +254,7 @@ function readAccessFile(): Access {
       chunkMode: parsed.chunkMode,
       appendSignature: parsed.appendSignature,
       permissionChat: parsed.permissionChat,
+      permissionOwner: parsed.permissionOwner,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -606,9 +600,9 @@ const mcp = new Server(
 // sent messages from (SELF). That heuristic breaks for split-handle setups
 // (e.g. phone sends as +1NNN, Mac sends as you@gmail.com) — only the Mac's
 // handle ends up in SELF, so prompts land in a Mac-side self-chat the user
-// doesn't watch and miss the phone-side thread entirely. Setting
-// access.permissionChat to a single chat GUID overrides the heuristic and
-// pins prompts to exactly that thread.
+// doesn't watch and miss the phone-side thread entirely. Setting both
+// access.permissionChat and access.permissionOwner pins prompts to a verified
+// one-to-one DM whose participant is that owner handle.
 mcp.setNotificationHandler(
   z.object({
     method: z.literal('notifications/claude/channel/permission_request'),
@@ -624,18 +618,34 @@ mcp.setNotificationHandler(
     // input_preview is unbearably long for Write/Edit; show only for Bash
     // where the command itself is the dangerous part.
     const preview = tool_name === 'Bash' ? `${input_preview}\n\n` : '\n'
-    // request_id stays in the header for audit/log clarity but the reply
-    // instructions are bare so the user can answer with "yes" / "no".
     const text =
       `🔐 Permission request [${request_id}]\n` +
       `${tool_name}: ${description}\n` +
       preview +
-      `Reply "yes" to allow or "no" to deny.`
+      `Reply "yes ${request_id}" to allow or "no ${request_id}" to deny.`
     const access = loadAccess()
     const targets = new Set<string>()
-    if (access.permissionChat) {
+    const pinnedInfo = access.permissionChat
+      ? qChatInfo.get(access.permissionChat)
+      : null
+    const pinnedParticipants = access.permissionChat
+      ? qChatParticipants.all(access.permissionChat).map(({ id }) => id)
+      : []
+    const hasPinnedTarget = isPinnedPermissionTarget({
+      chatGuid: access.permissionChat ?? '',
+      chatStyle: pinnedInfo?.style ?? null,
+      participantHandles: pinnedParticipants,
+      permissionChat: access.permissionChat,
+      permissionOwner: access.permissionOwner,
+    })
+    if (hasPinnedTarget && access.permissionChat) {
       targets.add(access.permissionChat)
     } else {
+      if (access.permissionChat || access.permissionOwner) {
+        process.stderr.write(
+          'imessage channel: permissionChat requires a one-to-one DM containing permissionOwner; using discovered self-chats instead.\n',
+        )
+      }
       for (const h of SELF) {
         for (const { guid } of qChatsForHandle.all(h)) targets.add(guid)
       }
@@ -647,7 +657,6 @@ mcp.setNotificationHandler(
       )
       return
     }
-    pendingPermissions.push(request_id)
     for (const guid of targets) {
       const err = sendText(guid, text)
       if (err) {
@@ -851,12 +860,34 @@ function handleInbound(r: Row): void {
   const isSelfChat = !isGroup && SELF.has(sender.toLowerCase())
   if (isSelfChat && consumeEcho(r.chat_guid, text || '\x00att')) return
 
-  // permissionChat: an explicitly-pinned thread (split-handle setups where
-  // the prompt-receiving chat isn't a Mac-side self-chat). Owner-only since
-  // the gate below still enforces allowFrom for non-self-chat senders.
+  // A pinned permission route is trusted only when its sender is the explicit
+  // owner handle. It intentionally bypasses the ordinary allowlist gate only
+  // for a token-correlated permission reply, never for general chat.
   const accessSnapshot = loadAccess()
-  const isPermissionChat =
-    !!accessSnapshot.permissionChat && r.chat_guid === accessSnapshot.permissionChat
+  const permissionReply = parsePermissionReply(text)
+  const isTrustedPermissionSource = isTrustedPermissionReply({
+    isSelfChat,
+    isGroup,
+    service: r.service,
+    chatGuid: r.chat_guid,
+    senderHandle: sender,
+    permissionChat: accessSnapshot.permissionChat,
+    permissionOwner: accessSnapshot.permissionOwner,
+  })
+
+  if (permissionReply && isTrustedPermissionSource) {
+    void mcp.notification({
+      method: 'notifications/claude/channel/permission',
+      params: {
+        request_id: permissionReply.requestId,
+        behavior: permissionReply.behavior,
+      },
+    })
+    const emoji = permissionReply.behavior === 'allow' ? '✅' : '❌'
+    const err = sendText(r.chat_guid, emoji)
+    if (err) process.stderr.write(`imessage channel: permission ack send failed: ${err}\n`)
+    return
+  }
 
   // Self-chat bypasses access control — you're the owner.
   if (!isSelfChat) {
@@ -878,40 +909,6 @@ function handleInbound(r: Row): void {
       if (err) process.stderr.write(`imessage channel: pairing code send failed: ${err}\n`)
       return
     }
-  }
-
-  // Permission replies: emit the structured event instead of relaying as
-  // chat. Owner-only — same gate as the send side. Accepted from self-chat
-  // OR the explicitly-configured permissionChat. Bare "yes"/"no" pops the
-  // oldest pending request_id from the FIFO queue; "yes <id>" targets a
-  // specific request and removes it from the queue wherever it sits.
-  const permMatch = (isSelfChat || isPermissionChat) ? PERMISSION_REPLY_RE.exec(text) : null
-  if (permMatch) {
-    const explicitId = permMatch[2]?.toLowerCase()
-    let requestId: string | undefined
-    if (explicitId) {
-      const idx = pendingPermissions.indexOf(explicitId)
-      if (idx >= 0) pendingPermissions.splice(idx, 1)
-      requestId = explicitId
-    } else {
-      requestId = pendingPermissions.shift()
-    }
-    if (!requestId) {
-      // Bare yes/no with nothing pending — likely conversational, ignore.
-      process.stderr.write(`imessage channel: permission reply with no pending request — ignored\n`)
-      return
-    }
-    void mcp.notification({
-      method: 'notifications/claude/channel/permission',
-      params: {
-        request_id: requestId,
-        behavior: permMatch[1]!.toLowerCase().startsWith('y') ? 'allow' : 'deny',
-      },
-    })
-    const emoji = permMatch[1]!.toLowerCase().startsWith('y') ? '✅' : '❌'
-    const err = sendText(r.chat_guid, emoji)
-    if (err) process.stderr.write(`imessage channel: permission ack send failed: ${err}\n`)
-    return
   }
 
   // attachment.filename is an absolute path (sometimes tilde-prefixed) —
