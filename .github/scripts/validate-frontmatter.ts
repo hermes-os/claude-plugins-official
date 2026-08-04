@@ -17,6 +17,11 @@ import { basename, join, relative, resolve } from "path";
 // ! tag, | > block scalars, % directive, @ ` reserved
 const YAML_SPECIAL_CHARS = /[{}[\]*&#!|>%@`]/;
 const FRONTMATTER_REGEX = /^---\s*\n([\s\S]*?)---\s*\n?/;
+// `description: |` opens a block scalar whose value is the following indented
+// lines. Quoting that header turns it into the literal string "|" and orphans
+// those lines, so the block must be left alone. Optional chomping (+/-) and
+// indentation (1-9) indicators may appear in either order.
+const BLOCK_SCALAR_HEADER = /^[|>](?:[+-]?[1-9]?|[1-9][+-]?)$/;
 
 /**
  * Pre-process frontmatter text to quote values containing special YAML
@@ -39,6 +44,10 @@ function quoteSpecialValues(text: string): string {
         (value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))
       ) {
+        result.push(line);
+        continue;
+      }
+      if (BLOCK_SCALAR_HEADER.test(value.trim())) {
         result.push(line);
         continue;
       }
