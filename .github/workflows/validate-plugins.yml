@@ -4,10 +4,19 @@ on:
   pull_request:
     paths:
       - '.claude-plugin/**'
-      - '*/.claude-plugin/**'
-      - '*/agents/**'
-      - '*/skills/**'
-      - '*/commands/**'
+      # Plugin content, spelled out per level for the same reason as the doc
+      # paths below — `*` doesn't cross a `/`, and plugins live at
+      # plugins/<name>/, so `*/agents/**` matched no file in this repo. A PR
+      # that only edited a plugin's agents, skills, commands, or manifest
+      # therefore never triggered validate at all.
+      - 'plugins/*/.claude-plugin/**'
+      - 'plugins/*/agents/**'
+      - 'plugins/*/skills/**'
+      - 'plugins/*/commands/**'
+      - 'external_plugins/*/.claude-plugin/**'
+      - 'external_plugins/*/agents/**'
+      - 'external_plugins/*/skills/**'
+      - 'external_plugins/*/commands/**'
       # `validate` is a required status check, so a PR that touches ONLY workflow
       # files (e.g. an action-SHA re-pin) would otherwise never trigger validate
       # and sit "Expected — Waiting for status to be reported" forever (workflow_dispatch
