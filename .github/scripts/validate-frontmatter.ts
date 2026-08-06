@@ -69,7 +69,7 @@ interface ParseResult {
   error?: string;
 }
 
-function parseFrontmatter(markdown: string): ParseResult {
+export function parseFrontmatter(markdown: string): ParseResult {
   const match = markdown.match(FRONTMATTER_REGEX);
 
   if (!match) {
@@ -280,7 +280,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(2);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    process.exit(2);
+  });
+}

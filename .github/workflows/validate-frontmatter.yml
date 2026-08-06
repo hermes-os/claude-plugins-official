@@ -6,6 +6,12 @@ on:
       - '**/agents/*.md'
       - '**/skills/*/SKILL.md'
       - '**/commands/*.md'
+      # The validator itself: a PR that only edits the script or its tests
+      # matches none of the content paths above, so its unit tests would
+      # never run.
+      - '.github/scripts/validate-frontmatter.ts'
+      - '.github/scripts/validate-frontmatter.test.ts'
+      - '.github/workflows/validate-frontmatter.yml'
 
 jobs:
   validate:
@@ -21,6 +27,9 @@ jobs:
 
       - name: Install dependencies
         run: cd .github/scripts && bun install yaml
+
+      - name: Test validator
+        run: cd .github/scripts && bun test ./validate-frontmatter.test.ts
 
       - name: Get changed frontmatter files
         id: changed
