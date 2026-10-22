@@ -252,7 +252,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/appwrite/claude-plugin.git",
-        "sha": "a42b16918159183a0d556e305fea4d240a9e3823"
+        "sha": "cc3cf02ea8653585b810dc5dbbc5ab20e660bc90"
       },
       "homepage": "https://appwrite.io"
     },
