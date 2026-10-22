@@ -524,7 +524,7 @@
         "url": "https://github.com/Bigdata-com/bigdata-plugins-marketplace.git",
         "path": "plugins/bigdata-com",
         "ref": "main",
-        "sha": "76a043a08c0a10eb73756d04031a613568017067"
+        "sha": "02242cc04162b1e5568731036f7666539c5901d9"
       },
       "homepage": "https://docs.bigdata.com"
     },
